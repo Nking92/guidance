@@ -6,6 +6,32 @@ import re
 
 @guidance
 def image(lm, src, allow_local=True):
+    """
+    Appends an image tag to the language model state with the source specified.
+
+    This function handles loading image data from a URL, a local file path, or directly
+    from image bytes. It then appends an image tag to the model state that references
+    the image data. The function supports loading images from local paths if `allow_local`
+    is set to True.
+
+    Args:
+        lm: The language model state to which the image tag will be appended.
+        src (str or bytes): The source of the image. Can be a URL, a local file path,
+                            or raw image bytes.
+        allow_local (bool, optional): If True, allows loading images from local file paths.
+                                    Defaults to True.
+
+    Returns:
+        The language model state with the appended image tag referencing the loaded image data.
+
+    Raises:
+        Exception: If the image data cannot be loaded from the specified source.
+
+    Example:
+        >>> lm = LanguageModelState()
+        >>> lm = image(lm, 'https://example.com/image.png')
+        # lm now includes an image tag with the source pointing to the provided URL.
+    """
 
     # load the image bytes
     # ...from a url

@@ -84,6 +84,20 @@ class SuffixAutomaton:
 
 @guidance(stateless=True, dedent=False)
 def substring(lm, s):
+    """
+    Creates a grammar function that matches substrings of the given string.
+
+    Args:
+        lm: The language model state to which the substring grammar will be appended.
+        s (str): The string for which substrings will be matched and generated.
+
+    Returns:
+        The language model state with the appended grammar function that matches substrings of `s`.
+
+    Example:
+        >>> lm += substring("example")
+        # lm now includes a grammar function that can match any substring of "example".
+    """
     suffix_automaton = SuffixAutomaton(s)
     node_cache = {}
     state_stack = [0]  # Start with the initial state index (0) on the stack

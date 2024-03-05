@@ -8,6 +8,21 @@ from ._any_char import any_char
 
 class Tool:
     def __init__(self, call_grammar=None, tool_call=None, callable=None):
+        """
+        Create a tool that can be called within a guidance program.
+
+        The Tool class encapsulates the grammar for calling a tool and the function
+        that performs the tool's action. It can work with either a predefined grammar
+        and function pair or a callable that is converted into a grammar call.
+
+        Args:
+            call_grammar: The grammar that specifies how the tool is called.
+            tool_call: The function that is called when the tool grammar is matched.
+            callable: Guidance function or regular callable, will be converted to grammar
+        Raises:
+            Exception: If the arguments do not match the expected pattern of either
+                        providing both a grammar and a function or a callable.
+        """
         # call_grammar specifies how the tool can be called. Crucially, it has to capture the args in variable 'tool_args'
         # tool_call is a guidance function  actually calls the tool, and returns an lm object with whatever outputs it wants
         # callable: guidance function or regular callable, will be converted to grammar

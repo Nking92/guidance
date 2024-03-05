@@ -9,6 +9,24 @@ from pyformlang.regular_expression import PythonRegex
 
 @guidance(stateless=True, dedent=False)
 def regex(lm, pattern):
+    """
+    Creates a guidance grammar based on a regular expression pattern.
+
+    Args:
+        lm: The language model state to which the regex grammar will be appended.
+        pattern (str): A regular expression pattern defining the text to match.
+
+    Returns:
+        The language model state with the appended grammar that matches the regex pattern.
+
+    Raises:
+        Exception: If the simplification process encounters multibyte character ranges
+                    or other unsupported regex features.
+
+    Example:
+        >>> lm += regex(lm, r'^[A-Za-z0-9]+$')
+        # lm now includes a grammar function that matches alphanumeric strings.
+    """
     # find all of the brackets we'll need to negate later
     nots = re.findall('\[\^(.*?)\]', pattern)
     nots = [re.compile('[' + x + ']') for x in nots]
