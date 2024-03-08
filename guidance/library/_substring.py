@@ -131,6 +131,59 @@ def substring(lm, s):
 
     return lm + node_cache[0]
 
+
+@guidance(stateless=True, dedent=False)
+def substring_no_empty(lm, s):
+    """
+    Creates a grammar function that matches non-empty substrings of the given string.
+
+    Args:
+        lm: The language model state to which the substring grammar will be appended.
+        s (str): The string for which substrings will be matched and generated.
+
+    Returns:
+        The language model state with the appended grammar function that matches non-empty substrings of `s`.
+
+    Example:
+        >>> lm += substring("example")
+        # lm now includes a grammar function that can match any non-empty substring of "example".
+    """
+    suffix_automaton = SuffixAutomaton(s)
+    node_cache = {}
+    state_stack = [0]  # Start with the initial state index (0) on the stack
+
+    # Loop as long as there are states on the stack
+    while state_stack:
+        state_ind = state_stack[-1]  # Check the state on the top of the stack
+
+        state = suffix_automaton.states[state_ind]
+
+        # If we have already computed the result for this state, skip it
+        if state_ind in node_cache:
+            state_stack.pop()
+            continue
+
+        # If the state is a leaf node, meaning no outgoing edges (is an end of some suffix)
+        if not state.next:
+            node_cache[state_ind] = None  # Leaf nodes represent empty string suffixes, which we want to exclude
+            state_stack.pop()
+            continue
+
+        # If there's an unprocessed child, add it to the stack
+        unprocessed_children = [next_state for next_state in state.next.values() if next_state not in node_cache]
+        if unprocessed_children:
+            state_stack.extend(unprocessed_children)
+        else:
+            # Once all children are processed, create the node for this state
+            options = [string(c) + node_cache[state.next[c]] for c in state.next if node_cache[state.next[c]] is not None]
+            if options:
+                node_cache[state_ind] = select(options, skip_checks=True) if len(options) > 1 else options[0]
+            else:
+                node_cache[state_ind] = None
+            state_stack.pop()
+
+    return lm + node_cache[0] if node_cache[0] is not None else lm
+
 # @guidance(stateless=True, dedent=False)
 # def substring(s):
 #     a = SuffixAutomaton(s)
