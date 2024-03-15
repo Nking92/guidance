@@ -9,12 +9,10 @@ from typing import List, TypeVar, Union
 
 from . import _serialization_pb2
 from . import _parser
+from ._consts import tag_start, tag_end
 
 _T = TypeVar("_T")
 
-# to support the embedding of guidance functions inside Python f-strings we use tags with these delimiters
-tag_start = "{{G|" # start of a call tag
-tag_end = "|G}}" # end of a call tag
 _call_pool = {} # the functions associated with the call tags
 _tag_pattern = re.compile(re.escape(tag_start) + r"([^\|]+)" + re.escape(tag_end)) # the pattern for matching call tags
 
