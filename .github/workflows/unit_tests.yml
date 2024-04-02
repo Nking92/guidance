@@ -8,12 +8,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  unit-tests:
 
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        model:
+          - "gpt2cpu"
+          - "phi2cpu"
+          # - "transformers_mistral_7b" See Issue 713
+          - "hfllama7b"
+          - "hfllama_mistral_7b"
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -29,9 +35,12 @@ jobs:
           pip install pytest
           pip install -e .[test]
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      - name: Test with pytest
+      - name: Install model-specific dependencies
         run: |
-          pytest --cov=guidance --cov-report=xml --cov-report=term-missing
+          pip install "llama-cpp-python<0.2.58"
+      - name: Run tests (except server)
+        run: |
+          pytest --cov=guidance --cov-report=xml --cov-report=term-missing --selected_model ${{ matrix.model }} -m "not server"  -m "not needs_credentials" ./tests/
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         with:

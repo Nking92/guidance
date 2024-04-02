@@ -5,7 +5,7 @@ from .._grammarless import GrammarlessEngine, Grammarless
 try:
     import vertexai
     is_vertexai = True
-except ImportError:
+except ModuleNotFoundError:
     is_vertexai = False
 
 class VertexAIEngine(GrammarlessEngine):
@@ -50,7 +50,7 @@ class VertexAI(Grammarless):
                 found_subclass = vertexai_subclasses.PaLM2Chat
 
             # Gemini2Chat
-            elif re.match("gemini-pro(@[0-9]+)?", model_name):
+            elif re.match("gemini-(pro|ultra)(@[0-9]+)?", model_name):
                 found_subclass = vertexai_subclasses.GeminiChat
             
             # convert to any found subclass
