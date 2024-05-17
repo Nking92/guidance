@@ -1,10 +1,11 @@
+import os
 import pytest
 import tiktoken
 
 _ = pytest.importorskip("openai")
 
 import guidance
-from guidance import assistant, gen, select, system, user
+from guidance import assistant, gen, select, image, system, user
 
 # This is all redundant with the class unification
 # def test_openai_class_detection():
@@ -106,3 +107,41 @@ def test_openai_chat_loop():
 
         with assistant():
             lm += gen(name="answer", max_tokens=2)
+
+
+def test_openai_image_only():
+    try:
+        model = guidance.models.OpenAI("gpt-4o", echo=False)
+    except Exception as e:
+        pytest.skip(f"Skipping OpenAI test because we can't load the model: {e}")
+
+    with system():
+        lm = model + "Describe the image."
+    
+    with user():
+        lm += image(os.path.join("tests", "data", "chip.jpg"), allow_local=True)
+
+    with assistant():
+        lm += gen(name="answer", max_tokens=50)
+    
+    assert len(lm["answer"]) > 0
+
+
+def test_openai_image_with_text():
+    try:
+        model = guidance.models.OpenAI("gpt-4o", echo=False)
+    except Exception as e:
+        pytest.skip(f"Skipping OpenAI test because we can't load the model: {e}")
+
+    with system():
+        lm = model + "You are a helpful assistant."
+    
+    with user():
+        lm += "What is this?"
+        lm += image(os.path.join("tests", "data", "chip.jpg"), allow_local=True)
+        lm += "Please respond with one sentence."
+
+    with assistant():
+        lm += gen(name="answer", max_tokens=50)
+    
+    assert len(lm["answer"]) > 0

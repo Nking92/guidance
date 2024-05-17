@@ -4,7 +4,6 @@ import typing
 import http
 import re
 
-
 @guidance
 def image(lm, src, allow_local=True):
 

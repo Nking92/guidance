@@ -90,7 +90,6 @@ class OpenAIEngine(GrammarlessEngine):
         messages = []
         found = True
         input_token_count = 0
-        is_image_model = self.model_name.startswith("gpt-4o") or self.model_name.startswith("gpt-4-turbo")
 
         # TODO: refactor this to method on parent class? (or a util function)
         while found:
@@ -112,21 +111,21 @@ class OpenAIEngine(GrammarlessEngine):
                     btext = prompt[pos : pos + end_pos]
                     pos += end_pos + len(role_end)
                     message_content = btext.decode("utf8")
-                    if is_image_model:
-                        raw_parts = _image_token_pattern.split(message_content)
+
+                    # Check if there's an image
+                    raw_parts = _image_token_pattern.split(message_content)
+                    if len(raw_parts) > 0:
                         parts = []
                         for i in range(0, len(raw_parts), 2):
-
                             # append the text portion
                             if len(raw_parts[i]) > 0:
                                 parts.append({"type": "text", "content": raw_parts[i]})
-                                # What to do about image input tokens count?
                                 input_token_count += len(self.tokenizer(raw_parts[i]))
 
                             # append any image
                             if i + 1 < len(raw_parts):
                                 parts.append({"type": "image_url", "image_url": {
-                                    "url": f"data:image/png;base64,{self[raw_parts[i + 1]]}",
+                                    "url": f"data:image/png;base64,{self.get(raw_parts[i + 1])}",
                                 }})
                         messages.append({"role": role_name, "content": parts})
                     else:
