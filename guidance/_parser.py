@@ -14,13 +14,13 @@ class ParserException(Exception):
 
 class EarleyItem:
     __slots__ = (
-        "node",
-        "values",
-        "start",
-        "pos",
-        "log_prob",
-        "children",
-        "hidden_start",
+        "node",  # The grammar node associated with this item
+        "values", # The sequence of grammar nodes in the production rule 
+        "start",  # The position in the input where this item starts
+        "pos",    # The position of the dot within the 'values' sequence
+        "log_prob", # The log probability of this partial parse
+        "children", # The child EarleyItems that form the parse tree
+        "hidden_start" # The earliest position a hidden node could match
     )
 
     def __init__(self, node, values, pos, start, log_prob, hidden_start):

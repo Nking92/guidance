@@ -1,6 +1,7 @@
 import re
 from ._model import Chat, Instruct
 from ._grammarless import Grammarless, GrammarlessEngine
+from ._byte_tokenizer import ByteTokenizer
 import tiktoken
 import os
 
@@ -34,9 +35,10 @@ class GoogleAIEngine(GrammarlessEngine):
 
         genai.configure(api_key=api_key)
 
-        # Gemini does not have a public tokenizer, so we pretend it tokenizes like gpt2...
+        # Gemini does not have a public tokenizer, so we use byte tokenizer
         if tokenizer is None:
-            tokenizer = tiktoken.get_encoding("gpt2")
+            # tokenizer = tiktoken.get_encoding("gpt2")
+            tokenizer = ByteTokenizer()
         self.model_name = model
 
         self.model_obj = genai.GenerativeModel(self.model_name, **kwargs)

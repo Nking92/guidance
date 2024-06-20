@@ -6,6 +6,7 @@ import tiktoken
 import re
 import logging
 from ._model import Tokenizer, Engine, Model, format_pattern, ConstraintException
+from ._byte_tokenizer import ByteTokenizer
 from ..chat import ChatMLTemplate
 
 import warnings
@@ -16,9 +17,10 @@ logger = logging.getLogger(__name__)
 class GrammarlessTokenizer(Tokenizer):
     def __init__(self, tokenizer):
 
-        # Grammarless models don't always have public tokenizations, so when not provided we pretend they tokenize like gpt2...
+        # Grammarless models don't always have public tokenizations, so when not provided we use ByteTokenizer
         if tokenizer is None:
-            tokenizer = tiktoken.get_encoding("gpt2")
+            # tokenizer = tiktoken.get_encoding("gpt2")
+            tokenizer = ByteTokenizer()
 
         # tiktoken tokenizer was given
         if hasattr(tokenizer, "decode_tokens_bytes"):

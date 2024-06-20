@@ -280,6 +280,7 @@ class Engine:
         # loop until we have generated a complete pattern
         self._hidden_count = len(prompt)  # we don't emit the prompt
         self._generated_pos = 0
+        self._sampled_token = None
         self._sampled_token_ind = None
         self._token_count = 0
         self._last_token_count = 0
@@ -488,6 +489,7 @@ class Engine:
                 # if we cannot consume any more tokens then we are done
                 if (
                     not self._is_forced
+                    and self._sampled_token is not None
                     and token_pos < len(self._sampled_token)
                     and self._trie == self._token_trie
                 ):
