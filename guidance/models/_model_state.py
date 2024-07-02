@@ -1,8 +1,10 @@
 from __future__ import annotations
+from typing import Dict, ClassVar
 from dataclasses import dataclass
 from typing import Optional, overload
 import base64
 import html
+import hashlib
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,13 +32,27 @@ class Text(Object):
         return escaped_text
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Image(Object):
-    id: str
+    _image_cache: ClassVar[Dict[str, 'Image']] = {}
+
+    name: str
     data: bytes
+    
+    def __new__(cls, name: str, data: bytes) -> 'Image':
+        data_hash = hashlib.md5(data).hexdigest()
+        if data_hash in cls._image_cache:
+            return cls._image_cache[data_hash]
+        else:
+            instance = super().__new__(cls)
+            object.__setattr__(instance, 'name', name)
+            object.__setattr__(instance, 'data', data)
+            cls._image_cache[data_hash] = instance
+            return instance 
 
     def __str__(self) -> str:
-        raise NotImplementedError
+        data_hash = hashlib.md5(self.data).hexdigest()
+        return f"Image({self.name}:{data_hash})"
 
     def _html(self) -> str:
         return f"""<img src="data:image/png;base64,'{base64.b64encode(self.data).decode()}'" style="max-width: 400px; vertical-align: middle; margin: 4px;">"""
