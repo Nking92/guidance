@@ -11,14 +11,14 @@ except ModuleNotFoundError:
 import llguidance
 from transformers import AutoModelForCausalLM, AutoProcessor
 
-from guidance._parser import TokenParser, process_grammar, process_prompt
+from guidance._parser import TokenParser, serialize_grammar, process_prompt
 from guidance.models._model import (
     Engine,
     Model,
     modality_pattern,
     Modality
 )
-from guidance.models.transformers._transformers import TransformersTokenizer
+from guidance.models.transformers._transformers import TransformersEngine, TransformersTokenizer
 
 try:
     from PIL import Image
@@ -29,7 +29,7 @@ except ModuleNotFoundError:
 logger = logging.getLogger(__name__)
 
 
-class TransformersPhi3VisionEngine(Engine):
+class TransformersPhi3VisionEngine(TransformersEngine):
     def __init__(
         self,
         model="microsoft/Phi-3-vision-128k-instruct",
@@ -38,19 +38,13 @@ class TransformersPhi3VisionEngine(Engine):
     ):
         if not has_pillow:
             raise Exception("Please install pillow with `pip install pillow` to use Phi 3 Vision")
-        self.model_name = model
-        # Initialize the underlying Phi 3 Vision model
-        self.model_obj = AutoModelForCausalLM.from_pretrained(model, **kwargs)
-        self.device = self.model_obj.device
 
         # Processor handles tokenization and image processing
-        self.processor = AutoProcessor.from_pretrained(self.model_name, trust_remote_code=True)
+        self.processor = AutoProcessor.from_pretrained(model, trust_remote_code=True)
+        # Hack: the sp_whitespace=True argument is necessary because the Phi 3 Vision tokenizer
+        # uses sentencepiece whitespace conventions but does not have an sp_model attribute
         self.tokenizer = TransformersTokenizer(model, self.processor.tokenizer, sp_whitespace=True)
-        super().__init__(self.tokenizer, compute_log_probs)
-
-        # Cache for past key values
-        self._past_key_values = None
-        self._cached_token_ids: list[int] = []
+        super().__init__(self.model, self.tokenizer, compute_log_probs, **kwargs)
 
 
     def start(self, prompt: bytes, grammar, media: dict, ensure_bos_token=True) -> TokenParser:
@@ -99,7 +93,7 @@ class TransformersPhi3VisionEngine(Engine):
 
         tokens = model_inputs["input_ids"][0].tolist()
 
-        serialized_grammar = process_grammar(grammar)
+        serialized_grammar = serialize_grammar(grammar)
         ll_tokenizer = llguidance.LLTokenizer(
             llguidance.TokenizerWrapper(self.tokenizer)
         )
@@ -109,6 +103,8 @@ class TransformersPhi3VisionEngine(Engine):
             log_level=int(os.environ.get("LLGUIDANCE_LOG_LEVEL", "1")),
         )
         if ensure_bos_token and self.tokenizer.bos_token_id is not None:
+            if self.tokenizer.bos_token_id is None:
+                logger.warning("Tokenizer does not have a BOS token, but ensure_bos_token is True")
             bos_token_id = self.tokenizer.bos_token_id
         else:
             bos_token_id = None
@@ -198,22 +194,22 @@ class TransformersPhi3VisionEngine(Engine):
         return self._cached_logits
 
 
-class TransformersPhi3Vision(Model):
-    def __init__(
-        self,
-        model=None,
-        echo=True,
-        compute_log_probs=False,
-        **kwargs,
-    ):
-        """Build a new TransformersPhi3Model object."""
-        if model is None or len(model) == 0:
-            model = "microsoft/Phi-3-vision-128k-instruct"
-        super().__init__(
-            TransformersPhi3VisionEngine(
-                model,
-                compute_log_probs,
-                **kwargs,
-            ),
-            echo=echo,
-        )
+# class TransformersPhi3Vision(Model):
+#     def __init__(
+#         self,
+#         model=None,
+#         echo=True,
+#         compute_log_probs=False,
+#         **kwargs,
+#     ):
+#         """Build a new TransformersPhi3Model object."""
+#         if model is None or len(model) == 0:
+#             model = "microsoft/Phi-3-vision-128k-instruct"
+#         super().__init__(
+#             TransformersPhi3VisionEngine(
+#                 model,
+#                 compute_log_probs,
+#                 **kwargs,
+#             ),
+#             echo=echo,
+#         )
