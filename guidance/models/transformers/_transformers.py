@@ -1,7 +1,5 @@
+from dataclasses import dataclass
 import os
-import re
-import textwrap
-import warnings
 
 from typing import Optional, Sequence, Union
 
@@ -48,6 +46,24 @@ def load_transformers_model(model, **kwargs):
             )
         model = transformers_package.AutoModelForCausalLM.from_pretrained(model, **kwargs)
     return model
+
+
+@dataclass
+class TransformersInputProcessorResult:
+    model_inputs: dict
+    token_ids: list[int]
+    # If -1, we will assume final media token can't be determined, we won't do token healing
+    final_media_token_index: int = -1
+
+
+class TransformersInputProcessor:
+    def load_tokenizer(self) -> TransformersTokenizer:
+        """ Load the tokenizer for the model. """
+        return
+
+    def process_inputs(self, prompt: str, media: dict) -> TransformersInputProcessorResult:
+        """ Process inputs for the model using prompt and media. Return a dictionary of inputs. """
+        return
 
 
 
@@ -134,6 +150,7 @@ class TransformersEngine(Engine):
                 tuple(p[..., :past_length, :] for p in v) for v in past_key_values
             )
         cache_token_ids[past_length:] = []
+        new_token_ids = token_ids[past_length:]
 
         # Subclasses (e.g. multimodal models) might prepare model inputs elsewhere and store them in self.model_inputs
         # Multimodal models will store a variety of implementation-specific data in self.model_inputs
@@ -142,7 +159,6 @@ class TransformersEngine(Engine):
         model_inputs["attention_mask"]=torch.ones(1, past_length + len(new_token_ids)).to(self.device)
 
         # call the model
-        new_token_ids = token_ids[past_length:]
         if len(new_token_ids) > 0:
             with torch.no_grad():
                 # Not all models support batched tokens for some reason

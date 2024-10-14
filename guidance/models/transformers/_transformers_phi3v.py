@@ -61,6 +61,7 @@ class TransformersPhi3VisionEngine(TransformersEngine):
         # and make list of images for processing
         images = []
         processed_prompt = prompt
+        # TODO: This step can probably be hidden from input processor subclass
         matches = {}
         for match in modality_pattern.finditer(prompt):
             match_str = match.group(0)
@@ -73,6 +74,8 @@ class TransformersPhi3VisionEngine(TransformersEngine):
                 matches[match_str] = media_id 
 
         image_counter = 1
+        # TODO: we can transform matches and media dict into something easier to work with here
+        # This work actually needs to happen in the subclass
         for match in matches.keys():
             processed_prompt = processed_prompt.replace(
                 match, f"<|image_{image_counter}|>"
@@ -127,89 +130,3 @@ class TransformersPhi3VisionEngine(TransformersEngine):
 
         return TokenParser(ll_interpreter, prompt_tokens)
 
-
-    def get_logits(self, prompt: bytes, token_ids: list[int], media: Optional[dict]=None):
-        """Computes the logits for the given token state.
-
-        This overrides a method from the LocalEngine class that is used to get
-        inference results from the model.
-        """
-
-        # make sure we don't run off the end of the model
-        if len(token_ids) >= getattr(self.model_obj.config, "max_position_embeddings", 1e10):
-            raise Exception(
-                f"Attempted to run a transformers model past its maximum context window size of {self.model_obj.config.max_position_embeddings}!"
-            )
-
-        # get the number of cache positions we are using
-        cache_token_ids = self._cached_token_ids
-        num_cached = 0
-        for id in cache_token_ids:
-            if (
-                num_cached >= len(cache_token_ids)
-                or num_cached >= len(token_ids)
-                or token_ids[num_cached] != id
-            ):
-                break
-            num_cached += 1
-
-        # reset the cache length according to that number of positions
-        past_key_values = self._past_key_values
-        past_length = past_key_values[0][0].size(-2) if past_key_values is not None else 0
-        if past_length > num_cached:
-            # note we recompute the last token because we don't bother to handle the special case of just computing logits
-            past_length = max(0, num_cached - 1)
-            self._past_key_values = tuple(
-                tuple(p[..., :past_length, :] for p in v) for v in past_key_values
-            )
-        cache_token_ids[past_length:] = []
-
-        # call the model
-        new_token_ids = token_ids[past_length:]
-        if len(new_token_ids) > 0:
-            self.model_inputs["input_ids"] = torch.tensor(new_token_ids).unsqueeze(0).to(self.device)
-            self.model_inputs["attention_mask"]=torch.ones(1, past_length + len(new_token_ids)).to(self.device)
-            position_ids=torch.arange(past_length, past_length + len(new_token_ids)).unsqueeze(0).to(self.device)
-            with torch.no_grad():
-                model_out = self.model_obj(
-                    **self.model_inputs,
-                    position_ids=position_ids,
-                    past_key_values=self._past_key_values,
-                    use_cache=True,
-                    return_dict=True,
-                    output_attentions=False,
-                    output_hidden_states=False,
-                )
-
-            # save the results
-            self._past_key_values = model_out.past_key_values
-            cache_token_ids.extend(new_token_ids)
-            # Need to add special truncating logic here for weird models that have a different output size than tokenizer vocab
-            self._cached_logits = (
-                model_out.logits[0, -1, : len(self.tokenizer.tokens)].cpu().numpy()
-            )
-            self.metrics.engine_input_tokens += len(token_ids)
-            self.metrics.engine_output_tokens += 1
-
-        return self._cached_logits
-
-
-# class TransformersPhi3Vision(Model):
-#     def __init__(
-#         self,
-#         model=None,
-#         echo=True,
-#         compute_log_probs=False,
-#         **kwargs,
-#     ):
-#         """Build a new TransformersPhi3Model object."""
-#         if model is None or len(model) == 0:
-#             model = "microsoft/Phi-3-vision-128k-instruct"
-#         super().__init__(
-#             TransformersPhi3VisionEngine(
-#                 model,
-#                 compute_log_probs,
-#                 **kwargs,
-#             ),
-#             echo=echo,
-#         )
