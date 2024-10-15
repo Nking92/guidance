@@ -1,7 +1,7 @@
 import logging
 import io
 import os
-from typing import Optional
+from typing import List, Optional
 
 try:
     import torch
@@ -18,7 +18,7 @@ from guidance.models._model import (
     modality_pattern,
     Modality
 )
-from guidance.models.transformers._transformers import TransformersEngine, TransformersTokenizer
+from guidance.models.transformers._transformers import PromptMedia, TransformersEngine, TransformersInputProcessor, TransformersInputProcessorResult, TransformersTokenizer
 
 try:
     from PIL import Image
@@ -130,3 +130,51 @@ class TransformersPhi3VisionEngine(TransformersEngine):
 
         return TokenParser(ll_interpreter, prompt_tokens)
 
+
+class Phi3VisionInputProcessor(TransformersInputProcessor):
+    def load_processor(self, model_name: str) -> TransformersTokenizer:
+        # Processor handles tokenization and image processing
+        self.processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+        # Hack: the sp_whitespace=True argument is necessary because the Phi 3 Vision tokenizer
+        # uses sentencepiece whitespace conventions but does not have an sp_model attribute
+        self.tokenizer = TransformersTokenizer(model_name, self.processor.tokenizer, sp_whitespace=True)
+        return self.tokenizer
+
+
+    def process_inputs(self, prompt: str, media: List[PromptMedia]) -> TransformersInputProcessorResult:
+        # TODO: See if media bytes are copied in memory here, resulting in high memory usage
+        # Map Guidance placeholders to Phi 3 Vision format and make list of images for processing
+        images = []
+        processed_prompt = prompt
+        image_counter = 1
+        for m in media:
+            if m.modality != Modality.IMAGE.name:
+                raise ValueError(f"Unsupported non-image modality: {m.modality}")
+            processed_prompt = processed_prompt.replace(
+                m.prompt_placeholder, f"<|image_{image_counter}|>"
+            )
+            images.append(Image.open(io.BytesIO(m.data)))
+            image_counter += 1
+        logger.debug("Transformed prompt: %s -> ", prompt, processed_prompt)
+
+        model_inputs = self.processor(
+            text=processed_prompt,
+            images=images if len(images) > 0 else None,
+            return_tensors="pt",
+        )
+
+        tokens = model_inputs["input_ids"][0].tolist()
+
+        # Find the last multimodal (negative) token in the sequence, if any
+        # Note: Phi 3 vision uses a convention of negative tokens for multimodal inputs
+        # Do not assume other models will use this convention
+        last_image_token_index = -1
+        for i, token in enumerate(reversed(tokens)):
+            if token < 0:
+                last_image_token_index = len(tokens) - i - 1
+                break
+        return TransformersInputProcessorResult(
+            model_inputs=model_inputs,
+            token_ids=tokens,
+            last_media_token_index=last_image_token_index
+        )
