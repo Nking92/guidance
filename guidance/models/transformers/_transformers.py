@@ -54,30 +54,6 @@ def load_transformers_model(model, **kwargs):
     return model
 
 
-@dataclass
-class TransformersInputProcessorResult:
-    model_inputs: dict
-    token_ids: list[int]
-    # If -1, assume final media token can't be determined
-    last_media_token_index: int = -1
-
-
-@dataclass
-class PromptMedia:
-    prompt_placeholder: str
-    modality: Modality
-    data: bytes
-
-
-class TransformersInputProcessor:
-    def load_processor(self, model_name: str) -> TransformersTokenizer:
-        """ Load the processor and tokenizer for the model, then return the tokenizer. """
-        pass
-
-    def process_inputs(self, prompt: str, media: List[PromptMedia]) -> TransformersInputProcessorResult:
-        """ Process inputs for the model using prompt and media. Return a dictionary of inputs. """
-        pass
-
 
 class TransformersEngine(Engine):
     def __init__(self, model, tokenizer, compute_log_probs: bool, chat_template=None, input_processor: Optional[TransformersInputProcessor]=None, **kwargs):
@@ -282,8 +258,10 @@ class Transformers(Model):
         echo=True,
         compute_log_probs=False,
         chat_template=None,
+        input_processor=None,
         **kwargs,
     ):
+        input_processor = load_processor_class(model, input_processor)
         """Build a new Transformers model object that represents a model in a given state."""
         if model == "microsoft/Phi-3-vision-128k-instruct":
             super().__init__(
