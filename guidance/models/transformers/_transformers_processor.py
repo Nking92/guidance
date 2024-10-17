@@ -22,26 +22,28 @@ class TransformersInputProcessorResult:
 
 
 class TransformersInputProcessor:
-    def load_processor(self, model_name: str) -> TransformersTokenizer:
-        """ Load the processor and tokenizer for the model, then return the tokenizer. """
-        pass
+    @property
+    def tokenizer(self) -> TransformersTokenizer:
+        raise NotImplementedError
 
-    def process_inputs(self, prompt: str, media: List[PromptMedia]) -> TransformersInputProcessorResult:
+    def process(self, prompt: str, media: List[PromptMedia]) -> TransformersInputProcessorResult:
         """ Process inputs for the model using prompt and media. Return a dictionary of inputs. """
-        pass
+        raise NotImplementedError
 
 
 class Phi3VisionInputProcessor(TransformersInputProcessor):
-    def load_processor(self, model_name: str) -> TransformersTokenizer:
+    def __init__(self, model_name: str):
         # Processor handles tokenization and image processing
-        self.processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+        self._processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
         # Hack: the sp_whitespace=True argument is necessary because the Phi 3 Vision tokenizer
         # uses sentencepiece whitespace conventions but does not have an sp_model attribute
-        tokenizer = TransformersTokenizer(model_name, self.processor.tokenizer, sp_whitespace=True)
-        return tokenizer
+        self._tokenizer = TransformersTokenizer(model_name, self._processor.tokenizer, sp_whitespace=True)
 
+    @property
+    def tokenizer(self) -> TransformersTokenizer:
+        return self._tokenizer
 
-    def process_inputs(self, prompt: str, media: List[PromptMedia]) -> TransformersInputProcessorResult:
+    def process(self, prompt: str, media: List[PromptMedia]) -> TransformersInputProcessorResult:
         # TODO: See if media bytes are copied in memory here, resulting in high memory usage
         # Map Guidance placeholders to Phi 3 Vision format and make list of images for processing
         images = []
@@ -57,7 +59,7 @@ class Phi3VisionInputProcessor(TransformersInputProcessor):
             image_counter += 1
         logger.debug("Transformed prompt: %s -> ", prompt, processed_prompt)
 
-        model_inputs = self.processor(
+        model_inputs = self._processor(
             text=processed_prompt,
             images=images if len(images) > 0 else None,
             return_tensors="pt",
@@ -96,7 +98,7 @@ def create_input_processor(model=None, input_processor=None) -> Optional[Transfo
         return input_processor
 
     if model == "microsoft/Phi-3-vision-128k-instruct":
-        return Phi3VisionInputProcessor()
+        return Phi3VisionInputProcessor(model)
     else:
         return None
 

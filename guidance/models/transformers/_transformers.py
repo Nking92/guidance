@@ -88,12 +88,11 @@ class TransformersEngine(Engine):
             if arg_name in kwargs:
                 passed_common_kwargs[arg_name] = kwargs[arg_name]
 
-        # Create the tokenizer
         if input_processor is not None:
-            if tokenizer is not None:
-                raise ValueError("Cannot specify both tokenizer and input_processor")
             self.input_processor = input_processor
-            tokenizer = input_processor.load_processor(self.model)
+            tokenizer = input_processor.tokenizer
+
+        # Create or get the tokenizer
         if isinstance(tokenizer, TransformersTokenizer):
             my_tokenizer = tokenizer
         else:
@@ -129,7 +128,7 @@ class TransformersEngine(Engine):
             media_data = media[media_id]
             prompt_media.append(PromptMedia(match_str, modality, media_data))
 
-        result = self.input_processor.process_inputs(prompt, prompt_media)
+        result = self.input_processor.process(prompt, prompt_media)
         self.model_inputs = result.model_inputs.to(self.device)
         serialized_grammar = serialize_grammar(grammar)
         ll_tokenizer = llguidance.LLTokenizer(
