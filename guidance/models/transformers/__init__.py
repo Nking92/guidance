@@ -1,2 +1,3 @@
-from ._transformers import Transformers, TransformersInputProcessor, TransformersInputProcessorResult
+from ._transformers import Transformers
+from ._transformers_processor import TransformersInputProcessor, TransformersInputProcessorResult, Phi3VisionInputProcessor
 from ._transformers_tokenizer import TransformersTokenizer

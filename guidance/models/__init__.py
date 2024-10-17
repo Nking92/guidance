@@ -1,8 +1,7 @@
-from ._model import Model, Instruct, Chat
+from ._model import Model, Instruct, Chat, Modality, PromptMedia
 
 # local models
 from .transformers._transformers import Transformers, TransformersTokenizer
-from .transformers._transformers_phi3v import TransformersPhi3Vision
 from .llama_cpp import LlamaCpp
 from ._mock import Mock, MockChat
 

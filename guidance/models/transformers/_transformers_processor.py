@@ -1,11 +1,12 @@
 from dataclasses import dataclass
+import inspect
 import io
 import logging
 from transformers import AutoProcessor
-from typing import List
+from typing import List, Optional
 from PIL import Image
 
-from guidance.models._model import Modality
+from guidance.models._model import Modality, PromptMedia
 from guidance.models.transformers._transformers_tokenizer import TransformersTokenizer
 
 
@@ -18,13 +19,6 @@ class TransformersInputProcessorResult:
     token_ids: list[int]
     # If -1, assume final media token can't be determined
     last_media_token_index: int = -1
-
-
-@dataclass
-class PromptMedia:
-    prompt_placeholder: str
-    modality: Modality
-    data: bytes
 
 
 class TransformersInputProcessor:
@@ -43,8 +37,8 @@ class Phi3VisionInputProcessor(TransformersInputProcessor):
         self.processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
         # Hack: the sp_whitespace=True argument is necessary because the Phi 3 Vision tokenizer
         # uses sentencepiece whitespace conventions but does not have an sp_model attribute
-        self.tokenizer = TransformersTokenizer(model_name, self.processor.tokenizer, sp_whitespace=True)
-        return self.tokenizer
+        tokenizer = TransformersTokenizer(model_name, self.processor.tokenizer, sp_whitespace=True)
+        return tokenizer
 
 
     def process_inputs(self, prompt: str, media: List[PromptMedia]) -> TransformersInputProcessorResult:
@@ -54,7 +48,7 @@ class Phi3VisionInputProcessor(TransformersInputProcessor):
         processed_prompt = prompt
         image_counter = 1
         for m in media:
-            if m.modality != Modality.IMAGE.name:
+            if m.modality != Modality.IMAGE:
                 raise ValueError(f"Unsupported non-image modality: {m.modality}")
             processed_prompt = processed_prompt.replace(
                 m.prompt_placeholder, f"<|image_{image_counter}|>"
@@ -86,38 +80,23 @@ class Phi3VisionInputProcessor(TransformersInputProcessor):
         )
 
 
-def load_processor_class(chat_template=None):
-    """Utility method to find the best chat template.
+def create_input_processor(model=None, input_processor=None) -> Optional[TransformersInputProcessor]:
+    """Finds the best input processor.
 
     Order of precedence:
-    - If it's a chat template class, use it directly
-    - If it's a string, check the cache of popular model templates
-    - If it's a string and not in the cache, try to create a class dynamically
-    - [TODO] If it's a string and can't be created, default to ChatML and raise a warning
-    - If it's None, default to ChatML and raise a warning
+    - If input_processor is a TransformersInputProcessor, use it directly
+    - If model is string, attempt to load a supported input processor for the model
+    - Else return None
     """
-    if inspect.isclass(chat_template) and issubclass(chat_template, ChatTemplate):
-        if chat_template is ChatTemplate:
+    if isinstance(input_processor, TransformersInputProcessor):
+        if type(input_processor) is TransformersInputProcessor:
             raise Exception(
-                "You can't use the base ChatTemplate class directly. Create or use a subclass instead."
+                "You can't use the base TransformersInputProcessor class directly. Create or use a subclass instead."
             )
-        return chat_template
+        return input_processor
 
-    elif isinstance(chat_template, str):
-        # First check the cache of popular model types
-        # TODO: Expand keys of cache to include aliases for popular model types (e.g. "llama2, phi3")
-        # Can possibly accomplish this with an "aliases" dictionary that maps all aliases to the canonical key in cache
-        if chat_template in CHAT_TEMPLATE_CACHE:
-            return CHAT_TEMPLATE_CACHE[chat_template]
-        # TODO: Add logic here to try to auto-create class dynamically via _template_class_from_string method
+    if model == "microsoft/Phi-3-vision-128k-instruct":
+        return Phi3VisionInputProcessor()
+    else:
+        return None
 
-    # Only warn when a user provided a chat template that we couldn't load
-    if chat_template is not None:
-        warnings.warn(
-            f"""Chat template {chat_template} was unable to be loaded directly into guidance.
-                        Defaulting to the ChatML format which may not be optimal for the selected model. 
-                        For best results, create and pass in a `guidance.ChatTemplate` subclass for your model."""
-        )
-
-    # By default, use the ChatML Template. Warnings to user will happen downstream only if they use chat roles.
-    return ChatMLTemplate

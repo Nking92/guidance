@@ -1,12 +1,12 @@
 from dataclasses import dataclass
 import logging
 import os
+from guidance.models.transformers._transformers_processor import PromptMedia, TransformersInputProcessor, create_input_processor
 import llguidance
 
 from typing import List, Optional, Sequence, Union
 
 from guidance._parser import TokenParser, process_prompt, serialize_grammar
-from guidance.models.transformers._transformers_phi3v import TransformersPhi3VisionEngine
 from guidance.models.transformers._transformers_tokenizer import TransformersTokenizer
 from guidance.models._model import modality_pattern
 
@@ -54,7 +54,6 @@ def load_transformers_model(model, **kwargs):
     return model
 
 
-
 class TransformersEngine(Engine):
     def __init__(self, model, tokenizer, compute_log_probs: bool, chat_template=None, input_processor: Optional[TransformersInputProcessor]=None, **kwargs):
         # fill in default model value
@@ -69,8 +68,7 @@ class TransformersEngine(Engine):
 
         self.model_obj = load_transformers_model(model, **kwargs)
 
-        if not isinstance(model, str):
-            self.model = model.__class__.__name__
+        self.model = model if isinstance(model, str) else model.__class__.__name__
         self.device = self.model_obj.device  # otherwise note the current device
 
         self._past_key_values = None
@@ -95,8 +93,8 @@ class TransformersEngine(Engine):
             if tokenizer is not None:
                 raise ValueError("Cannot specify both tokenizer and input_processor")
             self.input_processor = input_processor
-            tokenizer = input_processor.load_processor()
-        if tokenizer is TransformersTokenizer:
+            tokenizer = input_processor.load_processor(self.model)
+        if isinstance(tokenizer, TransformersTokenizer):
             my_tokenizer = tokenizer
         else:
             my_tokenizer = TransformersTokenizer(
@@ -261,26 +259,17 @@ class Transformers(Model):
         input_processor=None,
         **kwargs,
     ):
-        input_processor = load_processor_class(model, input_processor)
+        input_processor = create_input_processor(model, input_processor)
         """Build a new Transformers model object that represents a model in a given state."""
-        if model == "microsoft/Phi-3-vision-128k-instruct":
-            super().__init__(
-                TransformersPhi3VisionEngine(
-                    model,
-                    compute_log_probs,
-                    **kwargs
-                ),
-                echo=echo
-            )
-        else:
-            super().__init__(
-                TransformersEngine(
-                    model,
-                    tokenizer,
-                    compute_log_probs,
-                    chat_template=chat_template,
-                    **kwargs,
-                ),
-                echo=echo,
-            )
+        super().__init__(
+            TransformersEngine(
+                model,
+                tokenizer,
+                compute_log_probs,
+                chat_template=chat_template,
+                input_processor=input_processor,
+                **kwargs,
+            ),
+            echo=echo,
+        )
 

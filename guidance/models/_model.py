@@ -53,7 +53,6 @@ nodisp_pattern = re.compile(
 html_pattern = re.compile(r"&lt;\|\|_html:(.*?)_\|\|&gt;", flags=re.DOTALL)
 image_pattern = re.compile(r"&lt;\|_IMAGE:(.*?)\|&gt;")
 
-
 class Modality(Enum):
     TEXT = 1
     IMAGE = 2
@@ -67,6 +66,14 @@ modality_pattern = re.compile(
     r"<\|_(" + "|".join(modality.name for modality in Modality) + r"):(.*?)\|>"
 )
 
+# PromptMedia class is user-facing and intended to facilitate advanced
+# users with mapping the guidance placeholders to multimodal data,
+# for example, as needed when extending a transformers input processor.
+@dataclass
+class PromptMedia:
+    prompt_placeholder: str
+    modality: Modality
+    data: bytes
 
 class Engine:
     """The engine owns the inference computation and is used/created by the Model class.
