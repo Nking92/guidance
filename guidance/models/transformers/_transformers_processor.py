@@ -82,6 +82,55 @@ class Phi3VisionInputProcessor(TransformersInputProcessor):
         )
 
 
+class Llama3VisionInputProcessor(TransformersInputProcessor):
+    def __init__(self, model_name: str):
+        self._processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+        self._tokenizer = TransformersTokenizer(model_name, self._processor.tokenizer)
+
+    @property
+    def tokenizer(self) -> TransformersTokenizer:
+        return self._tokenizer
+
+    def process(self, prompt: str, media: List[PromptMedia]) -> TransformersInputProcessorResult:
+        if len(media) > 1:
+            raise ValueError("Llama3Vision only supports a single image input at the beginning of the prompt.")
+        elif len(media) == 1:
+            m = media[0]
+            if m.modality != Modality.IMAGE:
+                raise ValueError(f"Unsupported non-image modality: {m.modality}")
+            processed_prompt = prompt.replace(
+                m.prompt_placeholder, f"<|image|>"
+            )
+            image = Image.open(io.BytesIO(m.data))
+            logger.debug("Transformed prompt: %s -> ", prompt, processed_prompt)
+        else:
+            processed_prompt = prompt
+            image = None
+            last_image_token_index = -1
+
+        model_inputs = self._processor(
+            image,
+            processed_prompt,
+            return_tensors="pt",
+        )
+
+        tokens = model_inputs["input_ids"][0].tolist()
+
+        if image is not None:
+            # This is just a constant value obtained by manually inspecting the tokenizer
+            # using the <|image|> token
+            special_image_token_id = 128256
+            last_image_token_index = tokens.index(special_image_token_id)
+        else:
+            last_image_token_index = -1
+
+        return TransformersInputProcessorResult(
+            model_inputs=model_inputs,
+            token_ids=tokens,
+            last_media_token_index=last_image_token_index
+        )
+
+
 def create_input_processor(model=None, input_processor=None) -> Optional[TransformersInputProcessor]:
     """Finds the best input processor.
 
@@ -99,6 +148,8 @@ def create_input_processor(model=None, input_processor=None) -> Optional[Transfo
 
     if model == "microsoft/Phi-3-vision-128k-instruct":
         return Phi3VisionInputProcessor(model)
+    elif model == "meta-llama/Llama-3.2-11B-Vision":
+        return Llama3VisionInputProcessor(model)
     else:
         return None
 
