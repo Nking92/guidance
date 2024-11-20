@@ -80,9 +80,9 @@ class MockEngine(Engine):
         # seed the random number generator
         self._rand_generator = np.random.default_rng(seed=42)
 
-    def get_next_token(self, prompt: bytes, token_ids: list[int], mask: Optional[bytes], temperature: float, media: Optional[dict]=None) -> int:
+    def sample_with_temperature(self, logits, mask, temperature):
         self.called_temperatures.append(temperature)
-        return super().get_next_token(prompt, token_ids, mask, temperature, media)
+        return super().sample_with_temperature(logits, mask, temperature)
 
     def get_logits(self, token_ids: list[int]) -> np.ndarray:
         """Pretends to compute the logits for the given token state."""

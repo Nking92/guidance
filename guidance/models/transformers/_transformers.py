@@ -405,7 +405,7 @@ class TransformersTokenizer(Tokenizer):
 
 
 class TransformersEngine(Engine):
-    def __init__(self, model, tokenizer, compute_log_probs: bool, chat_template=None, **kwargs):
+    def __init__(self, model, tokenizer, compute_log_probs: bool, chat_template=None, enable_backtrack=True, enable_ff_tokens=True, **kwargs):
         # fill in default model value
         if model is None:
             model = os.environ.get("TRANSFORMERS_MODEL", None)
@@ -447,6 +447,8 @@ class TransformersEngine(Engine):
         super().__init__(
             my_tokenizer,
             compute_log_probs=compute_log_probs,
+            enable_backtrack=enable_backtrack,
+            enable_ff_tokens=enable_ff_tokens
         )
 
     def get_logits(self, prompt: bytes, token_ids: list[int], media: Optional[dict] = None):
@@ -546,6 +548,8 @@ class Transformers(Model):
         echo=True,
         compute_log_probs=False,
         chat_template=None,
+        enable_backtrack=True,
+        enable_ff_tokens=True,
         **kwargs,
     ):
         """Build a new Transformers model object that represents a model in a given state."""
@@ -555,6 +559,8 @@ class Transformers(Model):
                 tokenizer,
                 compute_log_probs,
                 chat_template=chat_template,
+                enable_backtrack=enable_backtrack,
+                enable_ff_tokens=enable_ff_tokens,
                 **kwargs,
             ),
             echo=echo,

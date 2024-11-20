@@ -17,6 +17,8 @@ from typing import Any, Dict, Iterator, List, Optional, Union, TYPE_CHECKING
 
 import numpy as np
 
+from ..visual import Environment
+
 try:
     from IPython.display import clear_output, display, HTML
 
@@ -30,6 +32,7 @@ from .._schema import EngineCallResponse, GuidanceEngineMetrics
 from .._utils import softmax, CaptureEvents
 from .._parser import TokenParser, create_token_parser
 from .._grammar import (
+    Function, # for da types, just for you Hudson <3 
     GrammarFunction,
     string,
     _call_pool,
@@ -77,10 +80,21 @@ class Engine:
     Server so a single server can serve many clients' model objects through a single Engine object.
     """
 
-    def __init__(self, tokenizer: Tokenizer, compute_log_probs=False):
+    def __init__(self, tokenizer: Tokenizer, compute_log_probs=False, enable_backtrack=True, enable_ff_tokens=True):
         self.tokenizer = tokenizer
         self.compute_log_probs = compute_log_probs
+        self._enable_backtrack = enable_backtrack
+        self._enable_ff_tokens = enable_ff_tokens
         self.metrics = GuidanceEngineMetrics()
+
+    # These need to be properties because once an Engine is started, you can't change their behavior.
+    @property
+    def enable_backtrack(self):
+        return self._enable_backtrack
+    
+    @property
+    def enable_ff_tokens(self):
+        return self._enable_ff_tokens
 
     def get_chat_template(self): # TODO [HN]: Add more logic here...should we instantiate class here? do we even need to?
         return self.tokenizer.chat_template() # Instantiate the class before returning to client for now
@@ -127,10 +141,18 @@ class Engine:
             grammar=grammar,
             tokenizer=self.tokenizer,
             prompt=prompt,
-            ensure_bos_token=ensure_bos_token
+            ensure_bos_token=ensure_bos_token,
+            enable_backtrack=self.enable_backtrack,
+            enable_ff_tokens=self.enable_ff_tokens,
         )
 
-    def __call__(self, prompt, grammar, media: Optional[dict]=None, ensure_bos_token=True) -> Iterator[EngineCallResponse]:
+    def __call__(
+            self, 
+            prompt: Union[str, TokenParser], 
+            grammar: Function,
+             media: Optional[dict]=None,
+            ensure_bos_token: bool = True, 
+        ) -> Iterator[EngineCallResponse]:
         """Main entry point for the inference-parser loop. Yields EngineCallResponse objects as
         the parser advances through the grammar.
 
@@ -142,53 +164,96 @@ class Engine:
             state is just a fixed string prompt, if a full Parser is given then we extend that
             parser by appending the new grammar to the parser's current grammar and then
             inferencing the model. (TODO: implement full parser extension support)
-        grammar: Grammar
-            This is the grammar we are extending the prompt with.
+        grammar: Function
+            Grammar (RawFunction or GrammarFunction) used to extend the prompt.
+        ensure_bos_token: bool
+            Ensures that the prompt ends with the BOS token.
         media: dict
             An optional dictionary mapping placeholder IDs in the prompt to multimodal data bytes.
         """
         parser = self.start(prompt, grammar, media, ensure_bos_token)
 
+        has_get_logits = True
         token = None
-        while not parser.done():
-            gen_data, response = parser.advance(token)
+        while True:
+            tokens, mid_process_fut = parser.advance(token)
 
-            if gen_data is not None:
-                if parser.is_accepting() and self.tokenizer.eos_token_id is not None:
-                    # Whenever we are in an accepting state, we will allow the model to generate whatever it wants
-                    # but we will treat any "illegal" tokens as EOS, allowing the model to finish gracefully.
-                    assert gen_data.mask[self.tokenizer.eos_token_id]
-                    token = self.get_next_token(
-                        prompt,
-                        token_ids=gen_data.tokens,
-                        mask=None,
-                        media=media,
-                        temperature=gen_data.temperature
-                    )
-                    if not gen_data.mask[token]:
-                        token = self.tokenizer.eos_token_id
-                else:
-                    token = self.get_next_token(
-                        prompt,
-                        token_ids=gen_data.tokens,
-                        mask=gen_data.mask,
-                        media=media,
-                        temperature=gen_data.temperature
-                    )
+            # Note that has_pending_stop implies that the response is a stop response,
+            # but the converse is not true. We can therefore avoid some (but not all)
+            # unnecessary calls to get_logits on the final iteration.
+            has_pending_stop = parser.has_pending_stop()
+
+            if has_get_logits and not has_pending_stop:
+                try:
+                    logits = self.get_logits(token_ids=tokens)
+                except NotImplementedError:
+                    # Permanently fall-back to get_next_token if get_logits is not implemented
+                    has_get_logits = False
+                    logits = None
             else:
-                token = None
+                logits = None
 
-            yield response
+            # Important: don't wait on this future until after getting the logits;
+            # this allows the mask to be built concurrently with model inference
+            mask, ll_response = mid_process_fut.result()
+
+            engine_response = ll_response.progress.to_engine_call_response()
+            yield engine_response
+
+            if ll_response.stop:
+                assert mask is None
+                # May raise an exception if the parser is in an bad state!
+                parser.cleanup()
+                # Ensure we break AFTER yielding the final response
+                break
+
+            # If there was a pending stop, we should have broken out of the loop
+            assert not has_pending_stop
+
+            # Help the type checker: assert that everything we need to get the next token is not None
+            assert mask is not None
+            assert ll_response.temperature is not None
+
+            can_finish_early = parser.is_accepting() and self.tokenizer.eos_token_id is not None
+
+            if can_finish_early:
+                # Type checker needs some help
+                assert self.tokenizer.eos_token_id is not None
+                # Should be equivalent to parser.is_accepting()
+                assert mask[self.tokenizer.eos_token_id]
+                # Whenever we are in an accepting state, we will allow the model to generate whatever it wants
+                # but we will treat any "illegal" tokens as EOS, allowing the model to finish gracefully.
+                # Hence, mask must be None
+                mask_for_sampling = None
+            else:
+                mask_for_sampling = mask
+
+            if logits is not None:
+                token = self.sample_with_temperature(
+                    logits=logits,
+                    mask=mask_for_sampling,
+                    temperature=ll_response.temperature,
+                )
+            else:
+                token = self.get_next_token(
+                    prompt,
+                    tokens,
+                    mask_for_sampling,
+                    ll_response.temperature,
+                    media
+                )
+
+            if can_finish_early and not mask[token]:
+                # Type checker needs some help
+                assert self.tokenizer.eos_token_id is not None
+                token = self.tokenizer.eos_token_id
+
 
     def get_next_token(self, prompt: bytes, token_ids: list[int], mask: Optional[bytes], temperature: float, media: Optional[dict]=None) -> int:
-        """Base implementation for getting the next token from the model which calls get_logits and sample_with_temperature.
-        Subclasses may override this method, e.g. if they use external APIs that do not support getting logits directly.
-        """
-        logits = self.get_logits(prompt, token_ids, media)
-        token = self.sample_with_temperature(logits, mask, temperature)
-        return token
+        # Prefer to implement get_logits over get_next_token as it allows for concurrent mask computation
+        raise NotImplementedError
 
-    def get_logits(self, prompt: bytes, token_ids: list[int], media: Optional[dict]=None) -> np.ndarray:
+    def get_logits(self, token_ids: list[int]) -> np.ndarray:
         raise NotImplementedError
 
     def sample_with_temperature(self, logits: np.ndarray, mask: Optional[bytes], temperature: float) -> int:
@@ -247,7 +312,14 @@ class Model:
 
         self.engine = engine
         self.chat_template = engine.get_chat_template() # TODO [HN]: Should this be a method or attr?
-        self.echo = echo
+
+        # HOTFIX(nopdive): Temporary until visualization overhaul is merged.
+        environment = Environment()
+        if environment.is_terminal():
+            self.echo = False
+        else:
+            self.echo = echo
+
         self.token_count = 0  # tracks how many tokens our byte state represents
         self.max_display_rate = 0.2  # this controls how frequently we are allowed to redraw the display (in seconds)
         self.opened_blocks = {}  # what context blocks have been opened but not closed
@@ -390,6 +462,7 @@ class Model:
             If we should clear all the model object's variables in addition to reseting the byte state.
         """
         self._state = self._state[:0]
+        self.opened_blocks = {}
         if clear_variables:
             self._variables = {}
             self._variables_log_probs = {}
