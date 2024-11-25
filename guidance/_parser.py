@@ -35,35 +35,12 @@ class TokenParser:
 
     def __init__(
         self,
-        grammar: Union[GrammarFunction, str],
-        tokenizer: Tokenizer,
-        prompt: bytes = b"",
-        ensure_bos_token: bool = True,
-        enable_backtrack: bool = True,
-        enable_ff_tokens: bool = True,
+        ll_interpreter: llguidance.LLInterpreter,
+        prompt_tokens: list[int]
     ):
-        if isinstance(grammar, GrammarFunction):
-            # we can't have a terminal as the root
-            if isinstance(grammar, Terminal):
-                grammar = Join([grammar])
-            serialized_grammar = json.dumps(grammar.ll_serialize())
-        else:
-            serialized_grammar = grammar
-
-        self.tokenizer = tokenizer
-        self.ll_tokenizer = llguidance.LLTokenizer(
-            llguidance.TokenizerWrapper(tokenizer)
-        )
-        # TODO: Move this constructor again
-        self.ll_interpreter = llguidance.LLInterpreter(
-            self.ll_tokenizer,
-            serialized_grammar,
-            enable_backtrack,
-            enable_ff_tokens,
-            log_level=int(os.environ.get("LLGUIDANCE_LOG_LEVEL", "1")),
-        )
+        self.ll_interpreter = ll_interpreter
+        self._generator = self._parse(prompt_tokens)
         self._threadpool = ThreadPoolExecutor(max_workers=1)
-        self._generator = self._parse(prompt, ensure_bos_token)
         self._done = False
         self._has_pending_stop = False
 
@@ -82,20 +59,6 @@ class TokenParser:
 
     def has_pending_stop(self) -> bool:
         return self._has_pending_stop
-
-    def _process_prompt(self, prompt: bytes, ensure_bos_token: bool) -> list[int]:
-        prompt_tokens = self.ll_interpreter.process_prompt(
-            self.tokenizer.encode(prompt)
-        )
-        if (
-            ensure_bos_token
-            and self.tokenizer.bos_token is not None
-            and prompt_tokens[:1] != [self.tokenizer.bos_token_id]
-        ):
-            # add the beginning of sequence token if needed
-            prompt_tokens = [self.tokenizer.bos_token_id] + prompt_tokens
-
-        return self.tokenizer.recode(prompt_tokens)
 
     def mid_process(self) -> tuple[Optional[bytes], LLInterpreterResponse]:
         mask, ll_response_string = self.ll_interpreter.mid_process()
@@ -166,8 +129,6 @@ class TokenParser:
             # TODO: raise specific exceptions for reasons such as MaxTokensTotal
             raise TokenParserException(f"Unexpected stop reason: {stop_reason}")
 
-        return response
-
 
 def process_prompt(prompt_tokens: Sequence[int], ll_interpreter: llguidance.LLInterpreter, bos_token_id: Optional[int]=None) -> list[int]:
     # Allows ll_interpreter to make adjustments to prompt tokens, such as token healing
@@ -197,6 +158,8 @@ def create_token_parser(
     tokenizer: Tokenizer,
     prompt: bytes = b"",
     ensure_bos_token: bool = True,
+    enable_backtrack: bool = True,
+    enable_ff_tokens: bool = True,
     trace: bool = False
 ) -> TokenParser:
     serialized_grammar = serialize_grammar(grammar)
@@ -206,6 +169,8 @@ def create_token_parser(
     ll_interpreter = llguidance.LLInterpreter(
         ll_tokenizer,
         serialized_grammar,
+        enable_backtrack,
+        enable_ff_tokens,
         log_level=2 if trace else int(os.environ.get("LLGUIDANCE_LOG_LEVEL", "1")),
     )
     if ensure_bos_token:
